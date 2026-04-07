@@ -177,6 +177,8 @@
     /* Game Over */
     .go-wrap { padding: 16px; text-align: center; border: 1px solid #bbb; background: #fafafa; }
     .go-record { background: #d4edda; border-color: #3a8a3a; }
+    .go-winner { background: #d0e4f5; border-color: #336699; }
+    .go-loser  { background: #f8d7da; border-color: #aa2222; }
     .go-badge { display: inline-block; background: #3a8a3a; color: #fff; padding: 1px 10px; font-size: 0.7rem; font-weight: bold; margin-bottom: 6px; letter-spacing: 0.06em; font-family: 'Segoe UI', system-ui, sans-serif; }
     .go-title { font-size: 1.15rem; font-weight: bold; margin-bottom: 4px; }
     .go-score { font-size: 2.8rem; font-weight: bold; margin: 6px 0; line-height: 1; }
@@ -190,9 +192,11 @@
 <body>
 <div class="container">
   <h1>(a,b)-Permutation Game</h1>
-  <div class="subtitle">
-    Name different positive numbers cooperatively. The game ends when the sequence contains
+  <div class="subtitle" id="subtitle">
+    Name different positive numbers. The game ends when the sequence contains
     an increasing subsequence of length <em>a</em> or a decreasing subsequence of length <em>b</em>.
+    In <strong>cooperative</strong> mode, players work together to make the game last as long as possible.
+    In <strong>competitive</strong> mode, the player who completes such a subsequence loses.
   </div>
 
   <!-- Settings -->
@@ -213,6 +217,14 @@
         <div class="row" style="gap:6px;margin-top:4px">
           <button class="btn btn-mode active" id="btnCpu" onclick="setMode('cpu')">vs Computer</button>
           <button class="btn btn-mode" id="btnHot" onclick="setMode('hot')">Hot Seat</button>
+        </div>
+      </div>
+      <div class="sep"></div>
+      <div>
+        <div class="label">Type</div>
+        <div class="row" style="gap:6px;margin-top:4px">
+          <button class="btn btn-mode active" id="btnCoop" onclick="setCompetitive(false)">Cooperative</button>
+          <button class="btn btn-mode" id="btnComp" onclick="setCompetitive(true)">Competitive</button>
         </div>
       </div>
       <div class="sep"></div>
@@ -324,9 +336,11 @@ function computeLDS(seq) {
 let G = {
   a: 3, b: 3,
   mode: 'cpu',          // 'cpu' | 'hot'
+  competitive: false,
   seq: [],
   used: new Set(),
   player: 1,
+  loser: null,          // set when game ends in competitive mode
   over: false,
   lis: { len: 0, idxSet: new Set() },
   lds: { len: 0, idxSet: new Set() },
@@ -347,14 +361,16 @@ function updateBest(a, b, score) {
 // ── Computer AI ───────────────────────────────────────────────────────────────
 
 /**
- * Greedy: search numbers 1..N, filter game-ending moves, pick the one
- * that minimises max(lis/(a-1), lds/(b-1)) — staying balanced between
- * the two limits as long as possible.
+ * Cooperative: prefer non-ending moves that minimise max(lis/(a-1), lds/(b-1)),
+ *   staying balanced between the two limits as long as possible.
+ * Competitive: prefer non-ending moves that maximise that ratio,
+ *   pushing the position toward the limit so the opponent has fewer safe moves.
  */
 function aiMove() {
-  const { seq, used, a, b } = G;
+  const { seq, used, a, b, competitive } = G;
   const maxN = Math.max(150, (a - 1) * (b - 1) * 5 + 20);
-  let bestN = -1, bestScore = Infinity, bestEnds = true;
+  let bestN = -1, bestEnds = true;
+  let bestScore = competitive ? -Infinity : Infinity;
 
   for (let n = 1; n <= maxN; n++) {
     if (used.has(n)) continue;
@@ -364,9 +380,13 @@ function aiMove() {
     const ends = nl >= a || nd >= b;
     const score = Math.max(nl / (a - 1), nd / (b - 1));
 
+    const better = competitive
+      ? (score > bestScore)   // competitive: push limits higher
+      : (score < bestScore);  // cooperative: stay away from limits
+
     if (bestEnds && !ends) {
       bestN = n; bestScore = score; bestEnds = false;
-    } else if (bestEnds === ends && score < bestScore) {
+    } else if (bestEnds === ends && better) {
       bestN = n; bestScore = score;
     }
   }
@@ -384,6 +404,7 @@ function applyMove(n) {
 
   if (G.lis.len >= G.a || G.lds.len >= G.b) {
     G.over = true;
+    G.loser = G.player;
   } else {
     G.player = G.player === 1 ? 2 : 1;
   }
@@ -576,32 +597,55 @@ function render() {
   if (isAI) setTimeout(doAI, 650);
 }
 
+function playerName(p) {
+  if (G.mode === 'cpu') return p === 1 ? 'Human' : 'Computer';
+  return `Player ${p}`;
+}
+
 function showGameOver() {
-  const { a, b, seq, lis, lds } = G;
-  const score  = seq.length;
-  const isNew  = updateBest(a, b, score);
-  const best   = getBest(a, b);
-  const max    = theMax(a, b);
+  const { a, b, seq, lis, lds, competitive, loser, mode } = G;
+  const score   = seq.length;
   const trigger = lis.len >= a
     ? `Increasing subsequence of length ${a} reached`
     : `Decreasing subsequence of length ${b} reached`;
-
   const inner = document.getElementById('goInner');
-  inner.innerHTML = `
-    <div class="go-wrap ${isNew ? 'go-record' : ''}">
-      ${isNew ? '<div class="go-badge">NEW RECORD</div>' : ''}
-      <div class="go-title" style="color:${isNew ? '#1e5c1e' : '#111'}">${isNew ? 'New Record!' : 'Game Over'}</div>
-      <div class="go-score" style="color:${isNew ? '#1e5c1e' : '#111'}">${score}</div>
-      <div class="go-detail">
-        ${trigger}<br>
-        Best: <strong style="color:#111">${best}</strong>
-        &nbsp;&middot;&nbsp;
-        Theoretical max: <strong style="color:#111">${max}</strong>
-      </div>
-      <button class="btn btn-primary" onclick="newGame()">Play Again</button>
-    </div>`;
 
-  document.getElementById('bestStat').textContent = best;
+  if (competitive) {
+    const winner = loser === 1 ? 2 : 1;
+    const humanLost = mode === 'cpu' && loser === 1;
+    const humanWon  = mode === 'cpu' && loser === 2;
+    const wrapCls = humanLost ? 'go-loser' : 'go-winner';
+    const titleColor = humanLost ? '#7a1010' : '#1a3a5c';
+    inner.innerHTML = `
+      <div class="go-wrap ${wrapCls}">
+        <div class="go-title" style="color:${titleColor}">${playerName(winner)} Wins!</div>
+        <div class="go-score" style="color:${titleColor}">${playerName(loser)} lost</div>
+        <div class="go-detail">
+          ${trigger}<br>
+          Game lasted <strong style="color:#111">${score}</strong> move${score !== 1 ? 's' : ''}
+          &nbsp;&middot;&nbsp;
+          Theoretical max: <strong style="color:#111">${theMax(a, b)}</strong>
+        </div>
+        <button class="btn btn-primary" onclick="newGame()">Play Again</button>
+      </div>`;
+  } else {
+    const isNew = updateBest(a, b, score);
+    const best  = getBest(a, b);
+    inner.innerHTML = `
+      <div class="go-wrap ${isNew ? 'go-record' : ''}">
+        ${isNew ? '<div class="go-badge">NEW RECORD</div>' : ''}
+        <div class="go-title" style="color:${isNew ? '#1e5c1e' : '#111'}">${isNew ? 'New Record!' : 'Game Over'}</div>
+        <div class="go-score" style="color:${isNew ? '#1e5c1e' : '#111'}">${score}</div>
+        <div class="go-detail">
+          ${trigger}<br>
+          Best: <strong style="color:#111">${best}</strong>
+          &nbsp;&middot;&nbsp;
+          Theoretical max: <strong style="color:#111">${theMax(a, b)}</strong>
+        </div>
+        <button class="btn btn-primary" onclick="newGame()">Play Again</button>
+      </div>`;
+    document.getElementById('bestStat').textContent = best;
+  }
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
@@ -646,6 +690,12 @@ function setMode(m) {
   document.getElementById('btnHot').classList.toggle('active', m === 'hot');
 }
 
+function setCompetitive(c) {
+  G.competitive = c;
+  document.getElementById('btnCoop').classList.toggle('active', !c);
+  document.getElementById('btnComp').classList.toggle('active',  c);
+}
+
 function newGame() {
   const a = parseInt(document.getElementById('aIn').value, 10);
   const b = parseInt(document.getElementById('bIn').value, 10);
@@ -654,8 +704,10 @@ function newGame() {
   G = {
     a, b,
     mode: G.mode,
+    competitive: G.competitive,
     seq: [], used: new Set(),
     player: 1,
+    loser: null,
     over: false,
     lis: { len: 0, idxSet: new Set() },
     lds: { len: 0, idxSet: new Set() },

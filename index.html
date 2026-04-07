@@ -191,7 +191,7 @@
 <div class="container">
   <h1>(a,b)-Permutation Game</h1>
   <div class="subtitle">
-    Name different positive integers cooperatively. The game ends when the sequence contains
+    Name different positive numbers cooperatively. The game ends when the sequence contains
     an increasing subsequence of length <em>a</em> or a decreasing subsequence of length <em>b</em>.
   </div>
 
@@ -274,7 +274,7 @@
   <!-- Input -->
   <div class="section" id="inputCard">
     <div class="row">
-      <input type="number" id="numInput" placeholder="?" min="1"
+      <input type="number" id="numInput" placeholder="?" min="0" step="any"
              onkeydown="if(event.key==='Enter')humanPlay()">
       <button class="btn btn-primary" onclick="humanPlay()">Play</button>
       <span id="msgEl" class="hint"></span>
@@ -611,9 +611,9 @@ function humanPlay() {
   if (G.mode === 'cpu' && G.player === 2) return;
 
   const input = document.getElementById('numInput');
-  const n = parseInt(input.value, 10);
+  const n = parseFloat(input.value);
 
-  if (!n || n < 1) { setMsg('Enter a positive integer', true); return; }
+  if (!isFinite(n) || n <= 0) { setMsg('Enter a positive number', true); return; }
   if (G.used.has(n)) { setMsg(`${n} is already in the sequence`, true); return; }
 
   input.value = '';
